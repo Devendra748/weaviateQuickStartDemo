@@ -1,185 +1,59 @@
-# How to Connect to Weaviate, Define a Class, Use Custom Vectors, and Perform Queries
+# Connecting Weaviate Locally with Docker
 
-## Step 1: Install Weaviate Client Library
+Weaviate is a powerful vector database that enables semantic searches and generative queries. To get started with Weaviate locally, you can use Docker to quickly set up and run a local instance. This document will guide you through the process of connecting Weaviate locally using Docker.
 
-Before you begin, make sure you have the Weaviate client library installed. We recommend using the Python client library for this tutorial.
+## Prerequisites
 
-```python
-pip install weaviate-client
-```
+Before you begin, make sure you have the following:
 
-## Step 2: Create an Instance on Weaviate Cloud Services (WCS)
+- Docker installed on your local machine. You can download and install Docker from the official website: [Docker Download](https://www.docker.com/products/docker-desktop).
 
-To use Weaviate, you'll need an instance. You can create a sandbox instance on Weaviate Cloud Services (WCS). Make sure to collect the API key and URL from the Details tab.
+## Step 1: Pull Weaviate Docker Image
 
-[Follow WCS Setup Instructions](#) (link to WCS setup instructions)
+1. Open your terminal or command prompt.
 
-## Step 3: Connect to Weaviate
+2. Use the following command to pull the Weaviate Docker image from the official Docker Hub repository:
 
-Now, let's connect to your Weaviate instance using the provided information:
+   ```bash
+   docker pull semitechnologies/weaviate
+   ```
 
-```python
-import weaviate
-import json
+   This command will download the latest Weaviate image to your local machine.
 
-client = weaviate.Client(
-    url="https://your-weaviate-instance-url",  # Replace with your Weaviate instance URL
-    auth_client_secret=weaviate.AuthApiKey(api_key="YOUR-WEAVIATE-API-KEY"),  # Replace with your Weaviate instance API key
-    additional_headers={
-        "X-OpenAI-Api-Key": "YOUR-OPENAI-API-KEY"  # Replace with your OpenAI API key
-    }
-)
-```
+## Step 2: Run Weaviate Container
 
-Now you are connected to your Weaviate instance.
+1. After the image has been successfully pulled, you can run a Weaviate container using the following command:
 
-## Step 4: Define a Class
+   ```bash
+   docker run -d -p 8080:8080 --name weaviate semitechnologies/weaviate
+   ```
 
-In Weaviate, you define a class to store objects. Let's create a class named "MyClass" and specify the vectorizer and generative module:
+   - `-d`: Runs the container in detached mode (in the background).
+   - `-p 8080:8080`: Maps port 8080 from the container to your local machine.
+   - `--name weaviate`: Assigns the name "weaviate" to the container.
 
-```python
-class_obj = {
-    "class": "MyClass",
-    "vectorizer": "text2vec-openai",
-    "moduleConfig": {
-        "text2vec-openai": {},
-        "generative-openai": {}  # Ensure the `generative-openai` module is used for generative queries
-    }
-}
+   This command starts the Weaviate container locally.
 
-client.schema.create_class(class_obj)
-```
+2. To verify that the container is running, you can check the running containers using the following command:
 
-Now you have a class ready to store objects.
+   ```bash
+   docker ps
+   ```
 
-## Step 5: Add Objects
+   You should see the "weaviate" container listed with its status as "Up."
 
-You can add objects to Weaviate using a batch import process. We will cover two methods: using a vectorizer or providing custom vectors.
+## Step 3: Access Weaviate
 
-### Option 1: Using a Vectorizer
+1. Weaviate should now be accessible at `http://localhost:8080` in your web browser.
 
-This code imports objects without specifying a vector. Weaviate will use the vectorizer defined for the class to create vector embeddings for each object:
+2. You can interact with Weaviate using the Weaviate RESTful API. For example, you can make API requests to create classes, add objects, and perform searches.
 
-```python
-import requests
-resp = requests.get('https://raw.githubusercontent.com/weaviate-tutorials/quickstart/main/data/jeopardy_tiny.json')
-data = json.loads(resp.text)  # Load data
+3. To stop the Weaviate container when you're done, use the following command:
 
-client.batch.configure(batch_size=100)  # Configure batch
-with client.batch as batch:  # Initialize a batch process
-    for i, d in enumerate(data):  # Batch import data
-        print(f"Importing question: {i+1}")
-        properties = {
-            "answer": d["Answer"],
-            "question": d["Question"],
-            "category": d["Category"],
-        }
-        batch.add_data_object(
-            data_object=properties,
-            class_name="MyClass"
-        )
-```
+   ```bash
+   docker stop weaviate
+   ```
 
-### Option 2: Providing Custom Vectors
+## Conclusion
 
-Alternatively, you can provide your own vectors to Weaviate:
-
-```python
-import requests
-fname = "jeopardy_tiny_with_vectors_all-OpenAI-ada-002.json"
-url = f'https://raw.githubusercontent.com/weaviate-tutorials/quickstart/main/data/{fname}'
-resp = requests.get(url)
-data = json.loads(resp.text)  # Load data
-
-client.batch.configure(batch_size=100)  # Configure batch
-with client.batch as batch:  # Configure a batch process
-    for i, d in enumerate(data):  # Batch import all Questions
-        print(f"Importing question: {i+1}")
-        properties = {
-            "answer": d["Answer"],
-            "question": d["Question"],
-            "category": d["Category"],
-        }
-        batch.add_data_object(
-            data_object=properties,
-            class_name="MyClass",
-            vector=d["vector"]  # Add custom vector
-        )
-```
-
-## Step 6: Queries
-
-Now that you've built your vector database and populated it with data, let's run queries.
-
-### Semantic Search
-
-Perform a similarity search to find quiz objects most similar to "biology":
-
-```python
-response = (
-    client.query
-    .get("MyClass", ["question", "answer", "category"])
-    .with_near_text({"concepts": ["biology"]})
-    .with_limit(2)
-    .do()
-)
-
-print(json.dumps(response, indent=4))
-```
-
-### Semantic Search with a Filter
-
-Add a filter to search only in objects with a "category" value of "ANIMALS":
-
-```python
-response = (
-    client.query
-    .get("MyClass", ["question", "answer", "category"])
-    .with_near_text({"concepts": ["biology"]})
-    .with_where({
-        "path": ["category"],
-        "operator": "Equal",
-        "valueText": "ANIMALS"
-    })
-    .with_limit(2)
-    .do()
-)
-
-print(json.dumps(response, indent=4))
-```
-
-### Generative Search (Single Prompt)
-
-Perform a generative search with a single prompt and get plain-language explanations for each answer:
-
-```python
-response = (
-    client.query
-    .get("MyClass", ["question", "answer", "category"])
-    .with_near_text({"concepts": ["biology"]})
-    .with_generate(single_prompt="Explain {answer} as you might to a five-year-old.")
-    .with_limit(2)
-    .do()
-)
-
-print(json.dumps(response, indent=4))
-```
-
-### Generative Search (Grouped Task)
-
-Perform a generative search with a grouped task prompt and generate a tweet about the search results:
-
-```python
-response = (
-    client.query
-    .get("MyClass", ["question", "answer", "category"])
-    .with_near_text({"concepts": ["biology"]})
-    .with_generate(grouped_task="Write a tweet with emojis about these facts.")
-    .with_limit(2)
-    .do()
-)
-
-print(response["data"]["Get"]["MyClass"][0]["_additional"]["generate"]["groupedResult"])
-```
-
-Congratulations! You have successfully connected to Weaviate, defined a class, used custom vectors, and performed various queries. You can explore more advanced Weaviate features and continue learning in the Weaviate Academy. Happy querying!
+You have successfully connected Weaviate locally using Docker. You can now use Weaviate for your vector-based applications, semantic searches, and generative queries. Remember to stop the Docker container when you're finished using Weaviate locally to free up system resources.
