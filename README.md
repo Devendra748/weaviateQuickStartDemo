@@ -1,62 +1,74 @@
-# Weaviate Vector Database Client
+# How to Connect to Weaviate, Define a Class, Use Custom Vectors, and Perform Queries
 
-This README provides a guide on installing the Weaviate client library, configuring it, and using it to work with the Weaviate Vector Database. Weaviate is a powerful database technology that leverages vectorization for advanced data retrieval and analysis.
+## Step 1: Install Weaviate Client Library
 
-## Installation
+Before you begin, make sure you have the Weaviate client library installed. We recommend using the Python client library for this tutorial.
 
-You can install the Weaviate client library using the following pip command:
-
-```bash
-!pip install weaviate-client
+```python
+pip install weaviate-client
 ```
 
-## Configuration
+## Step 2: Create an Instance on Weaviate Cloud Services (WCS)
 
-Before using the Weaviate client, you need to configure it with your API key and endpoint URL. Replace `api_key` and `url` with your specific configuration.
+To use Weaviate, you'll need an instance. You can create a sandbox instance on Weaviate Cloud Services (WCS). Make sure to collect the API key and URL from the Details tab.
+
+[Follow WCS Setup Instructions](#) (link to WCS setup instructions)
+
+## Step 3: Connect to Weaviate
+
+Now, let's connect to your Weaviate instance using the provided information:
 
 ```python
 import weaviate
-
-auth_config = weaviate.AuthApiKey(api_key="api_key")
+import json
 
 client = weaviate.Client(
-      url="url",
-      auth_client_secret=auth_config
+    url="https://your-weaviate-instance-url",  # Replace with your Weaviate instance URL
+    auth_client_secret=weaviate.AuthApiKey(api_key="YOUR-WEAVIATE-API-KEY"),  # Replace with your Weaviate instance API key
+    additional_headers={
+        "X-OpenAI-Api-Key": "YOUR-OPENAI-API-KEY"  # Replace with your OpenAI API key
+    }
 )
 ```
 
-## Creating a Schema
+Now you are connected to your Weaviate instance.
 
-You can define a data schema in Weaviate using Python code. Here's an example of creating a class for questions:
+## Step 4: Define a Class
+
+In Weaviate, you define a class to store objects. Let's create a class named "MyClass" and specify the vectorizer and generative module:
 
 ```python
 class_obj = {
-    "class": "Question",
-    "vectorizer": "text2vec-openai",  
+    "class": "MyClass",
+    "vectorizer": "text2vec-openai",
     "moduleConfig": {
         "text2vec-openai": {},
-        "generative-openai": {}  
+        "generative-openai": {}  # Ensure the `generative-openai` module is used for generative queries
     }
 }
 
 client.schema.create_class(class_obj)
 ```
 
-## Importing Data
+Now you have a class ready to store objects.
 
-You can import data into Weaviate in batches. Here's an example of importing data from a JSON file:
+## Step 5: Add Objects
+
+You can add objects to Weaviate using a batch import process. We will cover two methods: using a vectorizer or providing custom vectors.
+
+### Option 1: Using a Vectorizer
+
+This code imports objects without specifying a vector. Weaviate will use the vectorizer defined for the class to create vector embeddings for each object:
 
 ```python
 import requests
-import json
-
 resp = requests.get('https://raw.githubusercontent.com/weaviate-tutorials/quickstart/main/data/jeopardy_tiny.json')
-data = json.loads(resp.text)
+data = json.loads(resp.text)  # Load data
 
-client.batch.configure(batch_size=100)
-
-with client.batch as batch:
-    for i, d in enumerate(data):
+client.batch.configure(batch_size=100)  # Configure batch
+with client.batch as batch:  # Initialize a batch process
+    for i, d in enumerate(data):  # Batch import data
+        print(f"Importing question: {i+1}")
         properties = {
             "answer": d["Answer"],
             "question": d["Question"],
@@ -64,18 +76,49 @@ with client.batch as batch:
         }
         batch.add_data_object(
             data_object=properties,
-            class_name="Question"
+            class_name="MyClass"
         )
 ```
 
-## Querying Data
+### Option 2: Providing Custom Vectors
 
-You can query data in Weaviate using the Weaviate client. Here's an example of a query:
+Alternatively, you can provide your own vectors to Weaviate:
+
+```python
+import requests
+fname = "jeopardy_tiny_with_vectors_all-OpenAI-ada-002.json"
+url = f'https://raw.githubusercontent.com/weaviate-tutorials/quickstart/main/data/{fname}'
+resp = requests.get(url)
+data = json.loads(resp.text)  # Load data
+
+client.batch.configure(batch_size=100)  # Configure batch
+with client.batch as batch:  # Configure a batch process
+    for i, d in enumerate(data):  # Batch import all Questions
+        print(f"Importing question: {i+1}")
+        properties = {
+            "answer": d["Answer"],
+            "question": d["Question"],
+            "category": d["Category"],
+        }
+        batch.add_data_object(
+            data_object=properties,
+            class_name="MyClass",
+            vector=d["vector"]  # Add custom vector
+        )
+```
+
+## Step 6: Queries
+
+Now that you've built your vector database and populated it with data, let's run queries.
+
+### Semantic Search
+
+Perform a similarity search to find quiz objects most similar to "biology":
 
 ```python
 response = (
     client.query
-    .get("Question", ["question", "answer", "category"])
+    .get("MyClass", ["question", "answer", "category"])
     .with_near_text({"concepts": ["biology"]})
     .with_limit(2)
     .do()
@@ -84,6 +127,59 @@ response = (
 print(json.dumps(response, indent=4))
 ```
 
-This will return relevant questions related to the concept "biology."
+### Semantic Search with a Filter
 
-That's it! You've successfully installed, configured, and used the Weaviate client to work with the Weaviate Vector Database. Explore more features and functionalities to harness the power of Weaviate in your applications.
+Add a filter to search only in objects with a "category" value of "ANIMALS":
+
+```python
+response = (
+    client.query
+    .get("MyClass", ["question", "answer", "category"])
+    .with_near_text({"concepts": ["biology"]})
+    .with_where({
+        "path": ["category"],
+        "operator": "Equal",
+        "valueText": "ANIMALS"
+    })
+    .with_limit(2)
+    .do()
+)
+
+print(json.dumps(response, indent=4))
+```
+
+### Generative Search (Single Prompt)
+
+Perform a generative search with a single prompt and get plain-language explanations for each answer:
+
+```python
+response = (
+    client.query
+    .get("MyClass", ["question", "answer", "category"])
+    .with_near_text({"concepts": ["biology"]})
+    .with_generate(single_prompt="Explain {answer} as you might to a five-year-old.")
+    .with_limit(2)
+    .do()
+)
+
+print(json.dumps(response, indent=4))
+```
+
+### Generative Search (Grouped Task)
+
+Perform a generative search with a grouped task prompt and generate a tweet about the search results:
+
+```python
+response = (
+    client.query
+    .get("MyClass", ["question", "answer", "category"])
+    .with_near_text({"concepts": ["biology"]})
+    .with_generate(grouped_task="Write a tweet with emojis about these facts.")
+    .with_limit(2)
+    .do()
+)
+
+print(response["data"]["Get"]["MyClass"][0]["_additional"]["generate"]["groupedResult"])
+```
+
+Congratulations! You have successfully connected to Weaviate, defined a class, used custom vectors, and performed various queries. You can explore more advanced Weaviate features and continue learning in the Weaviate Academy. Happy querying!
